@@ -1,0 +1,3 @@
+import React from 'react';
+import { Link } from 'react-router-dom';
+export default function NotFound(){return <div dir="rtl" className="min-h-screen bg-secondary-50 flex items-center justify-center p-6"><div className="bg-white border rounded-2xl shadow-soft p-8 max-w-lg text-center"><div className="text-6xl font-black text-primary-600">404</div><h1 className="text-2xl font-bold mt-3">الصفحة غير موجودة</h1><p className="text-secondary-600 mt-2 mb-6">تحقق من الرابط أو ارجع إلى لوحة التحكم.</p><Link to="/" className="inline-block bg-primary-600 text-white rounded-xl px-5 py-3">العودة</Link></div></div>}

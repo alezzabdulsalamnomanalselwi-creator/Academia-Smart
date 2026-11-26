@@ -1,0 +1,3 @@
+import React from 'react';
+import { Link } from 'react-router-dom';
+export default function Unauthorized(){return <div dir="rtl" className="min-h-screen bg-secondary-50 flex items-center justify-center p-6"><div className="bg-white border rounded-2xl shadow-soft p-8 max-w-lg text-center"><div className="text-5xl mb-4">🔒</div><h1 className="text-2xl font-bold mb-2">غير مصرح لك بالدخول</h1><p className="text-secondary-600 mb-6">حسابك لا يملك الصلاحية المطلوبة لفتح هذه الصفحة.</p><Link to="/" className="inline-block bg-primary-600 text-white rounded-xl px-5 py-3">العودة للصفحة الرئيسية</Link></div></div>}

@@ -1,0 +1,63 @@
+{
+  "name": "faculty-recruitment",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@heroicons/react": "^2.2.0",
+    "cors": "^2.8.5",
+    "express": "^4.22.2",
+    "firebase": "^11.10.0",
+    "firebase-admin": "^14.3.0",
+    "multer": "^2.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-icons": "^5.7.0",
+    "react-router-dom": "^7.18.3",
+    "web-vitals": "^4.2.4"
+  },
+  "scripts": {
+    "start": "concurrently -k -n API,WEB \"node server/index.js\" \"react-scripts start\"",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "test:security": "node --test server/security.test.js",
+    "test:security:emulator": "node scripts/run-security-emulator-tests.js",
+    "test:security:all": "npm run test:security && npm run test:security:emulator",
+    "eject": "react-scripts eject",
+    "start:web": "react-scripts start",
+    "start:api": "node server/index.js"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "@tailwindcss/forms": "^0.5.11",
+    "autoprefixer": "^10.5.5",
+    "concurrently": "^9.2.4",
+    "cra-template": "1.2.0",
+    "firebase-tools": "^14.27.0",
+    "postcss": "^8.5.28",
+    "react-scripts": "5.0.1",
+    "tailwindcss": "^3.4.19"
+  },
+  "overrides": {
+    "path-to-regexp": "0.1.13",
+    "websocket-driver": "0.7.5"
+  }
+}

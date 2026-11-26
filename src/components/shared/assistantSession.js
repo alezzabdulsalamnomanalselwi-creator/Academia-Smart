@@ -1,0 +1,3 @@
+export const assistantSessionKey = owner => `academia_assistant_session:${owner || 'anonymous'}`;
+export const readAssistantMessages = (owner, storage = sessionStorage) => { try { const saved = JSON.parse(storage.getItem(assistantSessionKey(owner)) || '[]'); return Array.isArray(saved) ? saved.filter(item => item && typeof item.text === 'string').slice(-30) : []; } catch (_) { return []; } };
+export const writeAssistantMessages = (owner, messages, storage = sessionStorage) => { try { storage.setItem(assistantSessionKey(owner), JSON.stringify((messages || []).slice(-30))); } catch (_) { /* optional session storage */ } };

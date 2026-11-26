@@ -1,0 +1,285 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function hasProfile() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function me() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function active() {
+      return hasProfile()
+        && (!('accountStatus' in me().data)
+          || !(me().data.accountStatus in ['blocked', 'suspended']));
+    }
+
+    function role(expected) {
+      return active() && me().data.role == expected;
+    }
+
+    function legacySuperAdmin() {
+      return role('admin')
+        && !('adminLevel' in me().data)
+        && !('permissions' in me().data);
+    }
+
+    function superAdmin() {
+      return role('admin')
+        && ((('adminLevel' in me().data) && me().data.adminLevel == 'super')
+          || (('isSuperAdmin' in me().data) && me().data.isSuperAdmin == true)
+          || legacySuperAdmin());
+    }
+
+    function hasPerm(permission) {
+      return superAdmin()
+        || (role('admin')
+          && me().data.permissions is list
+          && (permission in me().data.permissions || '*' in me().data.permissions));
+    }
+
+    function safeProfileFields() {
+      return [
+        'firstName', 'lastName', 'phone', 'phoneNumber', 'profilePicUrl',
+        'education', 'department', 'departmentId', 'university', 'universityId',
+        'collegeId', 'subjectIds', 'cvUrl', 'certificatesUrl', 'skills',
+        'yearsExperience', 'updatedAt'
+      ];
+    }
+
+    function userIsLegacySuper(data) {
+      return data.role == 'admin'
+        && !('adminLevel' in data)
+        && !('permissions' in data);
+    }
+
+    function userIsSuper(data) {
+      return data.role == 'admin'
+        && ((('adminLevel' in data) && data.adminLevel == 'super')
+          || (('isSuperAdmin' in data) && data.isSuperAdmin == true)
+          || userIsLegacySuper(data));
+    }
+
+    function positionOwner(positionId) {
+      return get(/databases/$(database)/documents/positions/$(positionId)).data.postedBy.id;
+    }
+
+    function applicationRecruiter(data) {
+      return (('recruiterId' in data) && data.recruiterId == request.auth.uid)
+        || positionOwner(data.positionId) == request.auth.uid;
+    }
+
+    function notificationReceiver(data) {
+      return (('userId' in data) && data.userId == request.auth.uid)
+        || (('receiverId' in data) && data.receiverId == request.auth.uid)
+        || (('receiver' in data) && data.receiver.id == request.auth.uid);
+    }
+
+    function notificationSender(data) {
+      return (('senderId' in data) && data.senderId == request.auth.uid)
+        || (('sender' in data) && data.sender.id == request.auth.uid);
+    }
+
+    match /users/{uid} {
+      allow get: if active() && (
+        request.auth.uid == uid
+        || (role('admin') && (hasPerm('users.manage') || hasPerm('audit.view')))
+        || (role('recruiter') && resource.data.role == 'lecturer')
+        || (role('lecturer') && resource.data.role == 'recruiter')
+      );
+      allow list: if active() && (
+        (role('admin') && (hasPerm('users.manage') || hasPerm('audit.view')))
+        || (role('recruiter') && resource.data.role == 'lecturer')
+        || (role('lecturer') && resource.data.role == 'recruiter')
+      );
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.role == 'lecturer'
+        && request.resource.data.email == request.auth.token.email
+        && !('permissions' in request.resource.data)
+        && !('adminLevel' in request.resource.data)
+        && !('isSuperAdmin' in request.resource.data)
+        && !('blocked' in request.resource.data);
+      allow update: if active() && (
+        (request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(safeProfileFields()))
+        || (hasPerm('users.manage')
+          && !userIsSuper(resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(safeProfileFields()))
+      );
+      allow delete: if false;
+    }
+
+    match /universities/{id} {
+      allow read: if resource.data.active == true || active();
+      allow create, update, delete: if hasPerm('academic.manage');
+    }
+    match /colleges/{id} {
+      allow read: if active();
+      allow create, update, delete: if hasPerm('academic.manage');
+    }
+    match /departments/{id} {
+      allow read: if active();
+      allow create, update, delete: if hasPerm('academic.manage');
+    }
+    match /subjects/{id} {
+      allow read: if active();
+      allow create, update, delete: if hasPerm('academic.manage');
+    }
+
+    match /positions/{id} {
+      allow read: if active() && (
+        (role('recruiter') && (resource.data.status == 'open' || resource.data.postedBy.id == request.auth.uid))
+        || (role('admin') && (hasPerm('jobs.view') || hasPerm('academic.manage')))
+        || (role('lecturer') && resource.data.status == 'open')
+      );
+      allow create: if role('recruiter')
+        && request.resource.data.postedBy.id == request.auth.uid
+        && request.resource.data.status in ['open', 'draft'];
+      allow update: if role('recruiter')
+        && resource.data.postedBy.id == request.auth.uid
+        && request.resource.data.postedBy.id == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /applications/{id} {
+      allow create: if role('lecturer')
+        && request.resource.data.applicantId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.recruiterId == positionOwner(request.resource.data.positionId)
+        && get(/databases/$(database)/documents/positions/$(request.resource.data.positionId)).data.status == 'open';
+      allow read: if active() && (
+        (role('lecturer') && resource.data.applicantId == request.auth.uid)
+        || (role('recruiter') && applicationRecruiter(resource.data))
+        || (role('admin') && hasPerm('jobs.view'))
+      );
+      allow update: if active()
+        && request.resource.data.applicantId == resource.data.applicantId
+        && request.resource.data.positionId == resource.data.positionId
+        && (
+          (('recruiterId' in resource.data) && request.resource.data.recruiterId == resource.data.recruiterId)
+          || (!('recruiterId' in resource.data) && !('recruiterId' in request.resource.data))
+        )
+        && (
+          (role('recruiter') && applicationRecruiter(resource.data))
+          || (role('admin') && hasPerm('jobs.view'))
+        );
+      allow delete: if false;
+    }
+
+    match /interviews/{id} {
+      allow read: if active() && (
+        (role('lecturer') && resource.data.candidateId == request.auth.uid)
+        || (role('recruiter') && resource.data.recruiterId == request.auth.uid)
+        || (role('admin') && hasPerm('jobs.view'))
+      );
+      allow create: if role('recruiter')
+        && request.resource.data.recruiterId == request.auth.uid
+        && applicationRecruiter(get(/databases/$(database)/documents/applications/$(request.resource.data.applicationId)).data);
+      allow update: if role('recruiter')
+        && resource.data.recruiterId == request.auth.uid
+        && request.resource.data.recruiterId == resource.data.recruiterId
+        && request.resource.data.applicationId == resource.data.applicationId
+        && request.resource.data.candidateId == resource.data.candidateId;
+      allow delete: if false;
+    }
+
+    match /documents/{id} {
+      allow read: if active() && (
+        (role('lecturer') && resource.data.userId == request.auth.uid)
+        || (role('recruiter') && resource.data.recruiterId == request.auth.uid)
+        || (role('admin') && hasPerm('users.manage'))
+      );
+      allow create: if role('lecturer')
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.recruiterId is string
+        && request.resource.data.status == 'pending';
+      allow update: if active()
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.recruiterId == resource.data.recruiterId
+        && (
+          (role('lecturer')
+            && resource.data.userId == request.auth.uid
+            && resource.data.status == 'pending'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'title', 'type', 'fileURL', 'storagePath', 'fileName', 'fileType',
+              'fileSize', 'uploadedAt', 'updatedAt'
+            ]))
+          || (role('recruiter')
+            && resource.data.recruiterId == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'reviewedAt', 'reviewerComments', 'reviewerId', 'updatedAt'
+            ]))
+        );
+      allow delete: if false;
+    }
+
+    match /notifications/{id} {
+      allow read: if active() && (notificationReceiver(resource.data) || notificationSender(resource.data));
+      allow create: if active()
+        && notificationSender(request.resource.data)
+        && !(request.resource.data.type in ['rating_request', 'rating_received'])
+        && (
+          (('userId' in request.resource.data) && request.resource.data.userId is string)
+          || (('receiverId' in request.resource.data) && request.resource.data.receiverId is string)
+          || (('receiver' in request.resource.data) && request.resource.data.receiver.id is string)
+        )
+        && (!(('userId' in request.resource.data) && ('receiver' in request.resource.data))
+          || request.resource.data.userId == request.resource.data.receiver.id);
+      allow update: if active()
+        && notificationReceiver(resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'read', 'readAt'
+        ]);
+      allow delete: if false;
+    }
+
+    match /ratings/{id} {
+      allow read: if active() && (
+        (role('lecturer') && resource.data.lecturerId == request.auth.uid)
+        || (role('recruiter') && resource.data.recruiterId == request.auth.uid)
+        || (role('admin') && hasPerm('jobs.view'))
+      );
+      // Ratings are created atomically by the trusted API after validating
+      // an accepted request, completed interview, ownership, and score.
+      allow create: if false;
+      allow update, delete: if false;
+    }
+
+    match /verifications/{id} {
+      allow read: if active() && (
+        (role('lecturer') && resource.data.lecturerId == request.auth.uid)
+        || (role('recruiter') && resource.data.recruiterId == request.auth.uid)
+        || (role('admin') && hasPerm('users.manage'))
+      );
+      allow create: if role('lecturer')
+        && request.resource.data.lecturerId == request.auth.uid
+        && request.resource.data.recruiterId is string;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    match /recruiterRequests/{id} {
+      // Creation and state changes are privileged backend operations only.
+      allow read: if hasPerm('requests.manage');
+      allow create, update, delete: if false;
+    }
+
+    match /adminLogs/{id} {
+      allow create: if role('admin')
+        && request.resource.data.adminId == request.auth.uid;
+      allow read: if hasPerm('audit.view');
+      allow update, delete: if false;
+    }
+
+    // Deny by default. Overlapping broad authenticated catch-alls are forbidden.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
